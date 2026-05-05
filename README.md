@@ -1,31 +1,31 @@
 # happy.js
 
-Optimizes object shapes, DOM access patterns, event listeners, and long task scheduling. Optional WebGL renderer for dense lists.
+Stabilizes object shapes, separates DOM layout reads from writes, auto-memos React components, batches DOM mutations, and splits long tasks.
 
 ## Install
 
 ```bash
-npm install happy.js
+npm install @maaamahahh/happy.js
 ```
 
 ## Usage
 
 ```javascript
-import 'happy.js/runtime'
+import '@maaamahahh/happy.js/runtime'
 ```
 
 ### Babel
 
 ```javascript
 module.exports = {
-  plugins: [['happy.js/babel', { aggression: 'balanced' }]]
+  plugins: [['@maaamahahh/happy.js/babel', { aggression: 'balanced' }]]
 }
 ```
 
 ### Vite
 
 ```javascript
-import happy from 'happy.js/vite'
+import happy from '@maaamahahh/happy.js/vite'
 
 export default {
   plugins: [happy()]
@@ -35,7 +35,7 @@ export default {
 ## API
 
 ```javascript
-import { happy } from 'happy.js'
+import { happy } from '@maaamahahh/happy.js'
 
 happy.analyze(sourceCode)
 happy.transform(sourceCode)
@@ -46,16 +46,41 @@ happy.unpatch()
 ## Options
 
 ```javascript
-import { createHappy } from 'happy.js'
+import { createHappy } from '@maaamahahh/happy.js'
 
 const happy = createHappy({
-  aggression: 'balanced',
+  aggression: 'aggressive',
   strategies: {
-    shapeStabilization: true,
-    layoutOptimization: true,
-    reactAutoMemo: true,
+    propertyOrdering: true,
+    deleteDefense: true,
+    readWriteSeparation: true,
     domWriteCoalescing: true,
+    reactAutoMemo: true,
+    reactUseCallback: true,
+    reactUseMemo: true,
+    reactUseTransition: true,
+    longTaskSplitting: true,
   },
-  renderer: 'auto',
 })
+```
+
+## Virtual List
+
+```javascript
+import { createVirtualList } from '@maaamahahh/happy.js'
+
+const list = createVirtualList({
+  container: document.getElementById('list'),
+  itemCount: 10000,
+  itemHeight: 40,
+  renderItem: (i) => {
+    const el = document.createElement('div')
+    el.textContent = `Item ${i}`
+    return el
+  },
+})
+
+list.update(20000)
+list.scrollTo(500)
+list.destroy()
 ```

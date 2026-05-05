@@ -33,12 +33,12 @@ function enqueueTask(task: Task): void {
   taskQueue.sort(compareTasks)
 }
 
-function shouldYield(): boolean {
+export function shouldYield(): boolean {
   return performance.now() - lastYieldTime > YIELD_INTERVAL_MS
 }
 
 async function yieldToMain(): Promise<void> {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     if ('scheduler' in globalThis && typeof (globalThis as any).scheduler.postTask === 'function') {
       ;(globalThis as any).scheduler.postTask(resolve, { priority: 'background' })
     } else {
@@ -47,7 +47,7 @@ async function yieldToMain(): Promise<void> {
   })
 }
 
-export async function flushQueue(): Promise<void> {
+async function flushQueue(): Promise<void> {
   if (isRunning) return
   isRunning = true
 
@@ -59,9 +59,7 @@ export async function flushQueue(): Promise<void> {
 
     try {
       await task.execute()
-    } catch {
-      // Task failed silently — don't block other tasks
-    }
+    } catch { /* task failed silently */ }
 
     if (taskQueue.length > 0 && shouldYield()) {
       await yieldToMain()
@@ -87,7 +85,7 @@ export function scheduleWork(execute: () => void | Promise<void>, priority: Task
 }
 
 export function cancelTask(taskId: string): boolean {
-  const index = taskQueue.findIndex((t) => t.id === taskId)
+  const index = taskQueue.findIndex(t => t.id === taskId)
   if (index === -1) return false
   taskQueue.splice(index, 1)
   return true
@@ -101,6 +99,29 @@ export function getFrameBudget(): number {
   return Math.max(0, FRAME_BUDGET_MS - (performance.now() % FRAME_BUDGET_MS))
 }
 
+export function splitGenerator<T>(gen: Generator<T>, onChunk?: (results: T[]) => void): string {
+  return scheduleTask({
+    priority: TaskPriority.Low,
+    execute: async () => {
+      const results: T[] = []
+      let result = gen.next()
+
+      while (!result.done) {
+        results.push(result.value)
+
+        if (shouldYield()) {
+          if (onChunk) onChunk(results.splice(0))
+          await yieldToMain()
+        }
+
+        result = gen.next()
+      }
+
+      if (onChunk && results.length > 0) onChunk(results)
+    },
+  })
+}
+
 export const scheduler = {
   schedule: scheduleTask,
   scheduleWork,
@@ -108,4 +129,6 @@ export const scheduler = {
   flush: flushQueue,
   getQueueLength,
   getFrameBudget,
+  shouldYield,
+  splitGenerator,
 }

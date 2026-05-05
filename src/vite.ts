@@ -1,68 +1,45 @@
 import type { Plugin } from 'vite'
-import { transform } from './transformer.js'
-import type { TransformOptions } from './transformer.js'
+import { transform } from './transforms/index.js'
+import type { TransformStrategies } from './config.js'
 import { getStrategyOptions, type AggressionLevel } from './config.js'
 
 export interface VitePluginOptions {
   aggression?: AggressionLevel
-  strategies?: TransformOptions
+  strategies?: Partial<TransformStrategies>
   include?: RegExp[]
   exclude?: RegExp[]
   debug?: boolean
 }
 
-const DEFAULT_OPTIONS: Required<VitePluginOptions> = {
-  aggression: 'balanced',
-  strategies: {
-    shapeStabilization: true,
-    layoutOptimization: true,
-    reactAutoMemo: true,
-    domWriteCoalescing: true,
-  },
-  include: [/\.(js|jsx|ts|tsx)$/],
-  exclude: [/node_modules/, /vendor/],
-  debug: false,
-}
+const DEFAULT_INCLUDE = [/\.(js|jsx|ts|tsx)$/]
+const DEFAULT_EXCLUDE = [/node_modules/, /vendor/]
 
 function shouldTransform(id: string, include: RegExp[], exclude: RegExp[]): boolean {
-  if (exclude.some((pattern) => pattern.test(id))) return false
-  return include.some((pattern) => pattern.test(id))
+  if (exclude.some(pattern => pattern.test(id))) return false
+  return include.some(pattern => pattern.test(id))
 }
 
 export default function vitePluginHappy(options: VitePluginOptions = {}): Plugin {
-  const config = { ...DEFAULT_OPTIONS, ...options }
-  const strategies = { ...getStrategyOptions(config.aggression), ...config.strategies }
+  const baseStrategies = getStrategyOptions(options.aggression ?? 'balanced')
+  const strategies: TransformStrategies = {
+    ...baseStrategies,
+    ...options.strategies,
+  }
+  const include = options.include ?? DEFAULT_INCLUDE
+  const exclude = options.exclude ?? DEFAULT_EXCLUDE
 
   return {
     name: 'happy-js',
-
     enforce: 'pre',
 
-    config(userConfig) {
-      return {
-        esbuild: {
-          ...userConfig.esbuild,
-        },
-        build: {
-          ...userConfig.build,
-          rollupOptions: {
-            ...userConfig.build?.rollupOptions,
-            output: {
-              ...userConfig.build?.rollupOptions?.output,
-            },
-          },
-        },
-      }
-    },
-
     transform(code, id) {
-      if (!shouldTransform(id, config.include, config.exclude)) return null
+      if (!shouldTransform(id, include, exclude)) return null
 
       const result = transform(code, strategies)
 
       if (result === code) return null
 
-      if (config.debug) {
+      if (options.debug) {
         console.log(`[happy.js] Optimized: ${id}`)
       }
 

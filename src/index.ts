@@ -1,54 +1,51 @@
 import { scheduler } from './scheduler.js'
-import { analyzer } from './analyzer.js'
-import type { AnalysisReport } from './analyzer.js'
-import { transformer } from './transformer.js'
-import type { TransformOptions } from './transformer.js'
-import { runtime } from './runtime.js'
+import { analyzer } from './analyzer/index.js'
+import type { AnalysisReport } from './analyzer/index.js'
+import { transformer } from './transforms/index.js'
+import type { TransformStrategies } from './config.js'
+import { getStrategyOptions, type AggressionLevel } from './config.js'
+import { runtime } from './runtime/index.js'
+
+export type { TransformStrategies } from './config.js'
+export type { AggressionLevel } from './config.js'
+export type { AnalysisReport } from './analyzer/index.js'
+export type { ShapeAnalysis } from './analyzer/shape-analyzer.js'
+export type { LayoutRisk, LayoutRiskPattern } from './analyzer/layout-detector.js'
+export type { HotPath } from './analyzer/hot-path-finder.js'
+export type { ReactComponentAnalysis } from './analyzer/react-inspector.js'
+export type { Task, TaskPriority } from './scheduler.js'
+export type { VirtualList, VirtualListOptions } from './renderer/dom.js'
+export { createVirtualList } from './renderer/dom.js'
 
 export interface HappyConfig {
   mode?: 'auto' | 'runtime' | 'compile'
-  aggression?: 'conservative' | 'balanced' | 'aggressive'
-  strategies?: TransformOptions
-  renderer?: 'dom' | 'canvas' | 'webgl' | 'auto'
+  aggression?: AggressionLevel
+  strategies?: Partial<TransformStrategies>
   debug?: boolean
 }
 
 export interface HappyAPI {
   analyze: (code: string) => AnalysisReport
-  transform: (code: string, options?: TransformOptions) => string
+  transform: (code: string, options?: Partial<TransformStrategies>) => string
   patch: () => void
   unpatch: () => void
   scheduler: typeof scheduler
   version: string
 }
 
-const defaultConfig: Required<HappyConfig> = {
-  mode: 'auto',
-  aggression: 'balanced',
-  strategies: {
-    shapeStabilization: true,
-    layoutOptimization: true,
-    reactAutoMemo: true,
-    domWriteCoalescing: true,
-  },
-  renderer: 'auto',
-  debug: false,
-}
-
 function createHappy(config: HappyConfig = {}): HappyAPI {
-  const merged = { ...defaultConfig, ...config }
+  const strategies = {
+    ...getStrategyOptions(config.aggression ?? 'balanced'),
+    ...config.strategies,
+  }
 
   return {
     analyze: analyzer.analyze,
-    transform: (code, options) => transformer.transform(code, options),
-    patch: () => {
-      runtime.patchDOM()
-      runtime.patchAddEventListener()
-      runtime.patchRequestAnimationFrame()
-    },
+    transform: (code, options) => transformer.transform(code, { ...strategies, ...options }),
+    patch: runtime.patch,
     unpatch: runtime.unpatch,
     scheduler,
-    version: '0.1.0',
+    version: '0.2.0',
   }
 }
 
@@ -56,6 +53,4 @@ const happy = createHappy()
 
 export { happy, createHappy }
 export { scheduler, analyzer, transformer, runtime }
-export type { TransformOptions } from './transformer.js'
-export type { AnalysisReport } from './analyzer.js'
 export default happy

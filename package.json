@@ -1,7 +1,7 @@
 {
   "name": "@maaamahahh/happy.js",
-  "version": "0.1.0",
-  "description": "Optimizes object shapes, DOM access patterns, event listeners, and long task scheduling.",
+  "version": "0.2.0",
+  "description": "Stabilizes object shapes, separates DOM layout reads from writes, auto-memos React components, batches DOM mutations, and splits long tasks.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/maaamahahh/happy.js.git"
@@ -27,14 +27,14 @@
       "types": "./dist/vite.d.ts"
     },
     "./runtime": {
-      "import": "./dist/runtime.js",
-      "require": "./dist/runtime.js",
-      "types": "./dist/runtime.d.ts"
+      "import": "./dist/runtime/index.js",
+      "require": "./dist/runtime/index.js",
+      "types": "./dist/runtime/index.d.ts"
     },
     "./renderer": {
-      "import": "./dist/renderer/hybrid.js",
-      "require": "./dist/renderer/hybrid.js",
-      "types": "./dist/renderer/hybrid.d.ts"
+      "import": "./dist/renderer/index.js",
+      "require": "./dist/renderer/index.js",
+      "types": "./dist/renderer/index.d.ts"
     }
   },
   "scripts": {
@@ -47,14 +47,23 @@
     "optimization",
     "react",
     "v8",
-    "webgl",
-    "frontend"
+    "hidden-class",
+    "layout-thrashing",
+    "dom-batching",
+    "frontend",
+    "babel-plugin",
+    "vite-plugin"
   ],
   "license": "Unlicense",
-  "devDependencies": {
-    "@babel/core": "^7.24.0",
+  "dependencies": {
+    "@babel/parser": "^7.24.0",
     "@babel/traverse": "^7.24.0",
     "@babel/types": "^7.24.0",
+    "@babel/generator": "^7.24.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@babel/plugin-syntax-jsx": "^7.24.0",
     "@types/babel__core": "^7.20.5",
     "@types/babel__traverse": "^7.28.0",
     "typescript": "^5.4.0",
