@@ -1,0 +1,82 @@
+{
+  "name": "@maaamahahh/happy.js",
+  "version": "0.1.0",
+  "description": "Optimizes object shapes, DOM access patterns, event listeners, and long task scheduling.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maaamahahh/happy.js.git"
+  },
+  "homepage": "https://github.com/maaamahahh/happy.js#readme",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./babel": {
+      "import": "./dist/babel.js",
+      "require": "./dist/babel.js",
+      "types": "./dist/babel.d.ts"
+    },
+    "./vite": {
+      "import": "./dist/vite.js",
+      "require": "./dist/vite.js",
+      "types": "./dist/vite.d.ts"
+    },
+    "./runtime": {
+      "import": "./dist/runtime.js",
+      "require": "./dist/runtime.js",
+      "types": "./dist/runtime.d.ts"
+    },
+    "./renderer": {
+      "import": "./dist/renderer/hybrid.js",
+      "require": "./dist/renderer/hybrid.js",
+      "types": "./dist/renderer/hybrid.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "performance",
+    "optimization",
+    "react",
+    "v8",
+    "webgl",
+    "frontend"
+  ],
+  "license": "Unlicense",
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@babel/traverse": "^7.24.0",
+    "@babel/types": "^7.24.0",
+    "@types/babel__core": "^7.20.5",
+    "@types/babel__traverse": "^7.28.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.0.0"
+  },
+  "peerDependencies": {
+    "@babel/core": ">=7.0.0",
+    "vite": ">=4.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@babel/core": {
+      "optional": true
+    },
+    "vite": {
+      "optional": true
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
