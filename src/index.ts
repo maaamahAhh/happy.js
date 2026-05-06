@@ -16,6 +16,10 @@ export type { ReactComponentAnalysis } from './analyzer/react-inspector.js'
 export type { Task, TaskPriority } from './scheduler.js'
 export type { VirtualList, VirtualListOptions } from './renderer/dom.js'
 export { createVirtualList } from './renderer/dom.js'
+export { createHybridRenderer, type HybridRenderer, type HybridRendererOptions } from './renderer/hybrid.js'
+export { SdfAtlas, type GlyphMetrics } from './renderer/sdf-atlas.js'
+export { WebGLRenderer, type RenderItem, type RenderRect, type RenderText } from './renderer/webgl.js'
+export { AccessibilityLayer } from './renderer/accessibility.js'
 
 export interface HappyConfig {
   mode?: 'auto' | 'runtime' | 'compile'
@@ -45,7 +49,7 @@ function createHappy(config: HappyConfig = {}): HappyAPI {
     patch: runtime.patch,
     unpatch: runtime.unpatch,
     scheduler,
-    version: '0.2.0',
+    version: '0.3.0',
   }
 }
 
