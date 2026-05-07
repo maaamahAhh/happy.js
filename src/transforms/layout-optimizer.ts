@@ -1,6 +1,7 @@
 import type { NodePath } from '@babel/traverse'
 import * as t from '@babel/types'
 import type { TransformStrategies } from '../config.js'
+import { BRIDGE_IDENTIFIER } from '../config.js'
 import type { VisitorFn, VisitorMap } from './types.js'
 import { LAYOUT_READ_PROPERTIES, LAYOUT_READ_METHODS, DOM_WRITE_PROPERTIES, DOM_WRITE_METHODS } from '../analyzer/shared.js'
 
@@ -30,7 +31,7 @@ function wrapWriteWithBatch(stmt: t.Statement): t.Statement {
   const expr = t.isExpressionStatement(stmt)
     ? stmt.expression
     : t.callExpression(t.identifier('void'), [t.arrowFunctionExpression([], t.booleanLiteral(true))])
-  return t.expressionStatement(t.callExpression(t.identifier('happyBatchWrite'), [t.arrowFunctionExpression([], expr)]))
+  return t.expressionStatement(t.callExpression(t.memberExpression(t.identifier(BRIDGE_IDENTIFIER), t.identifier('batchWrite')), [t.arrowFunctionExpression([], expr)]))
 }
 
 function separateReadWriteInFunction(path: NodePath<t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression>): void {

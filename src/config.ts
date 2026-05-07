@@ -1,5 +1,7 @@
 export type AggressionLevel = 'conservative' | 'balanced' | 'aggressive'
 
+export const BRIDGE_IDENTIFIER = '__happy'
+
 export interface TransformStrategies {
   propertyOrdering: boolean
   deleteDefense: boolean

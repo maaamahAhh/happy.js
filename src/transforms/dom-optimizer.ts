@@ -1,10 +1,15 @@
 import type { NodePath } from '@babel/traverse'
 import * as t from '@babel/types'
 import type { TransformStrategies } from '../config.js'
+import { BRIDGE_IDENTIFIER } from '../config.js'
 import type { VisitorFn, VisitorMap } from './types.js'
 import { isLoopNode } from '../analyzer/shared.js'
 
 const MIN_STATEMENTS_FOR_SPLIT = 5
+
+function createBridgeCall(method: string, args: t.Expression[] = []): t.CallExpression {
+  return t.callExpression(t.memberExpression(t.identifier(BRIDGE_IDENTIFIER), t.identifier(method)), args)
+}
 
 function wrapLongFunctionWithYield(path: NodePath<t.FunctionDeclaration | t.ArrowFunctionExpression | t.FunctionExpression>): void {
   const body = path.node.body
@@ -16,8 +21,8 @@ function wrapLongFunctionWithYield(path: NodePath<t.FunctionDeclaration | t.Arro
   if (!isLoopNode(loop)) return
 
   const yieldCheck = t.ifStatement(
-    t.callExpression(t.identifier('happyShouldYield'), []),
-    t.blockStatement([t.expressionStatement(t.callExpression(t.identifier('happyYield'), []))]),
+    createBridgeCall('shouldYield'),
+    t.blockStatement([t.expressionStatement(createBridgeCall('yield'))]),
   )
 
   if (t.isBlockStatement(loop.body)) {

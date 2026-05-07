@@ -13,12 +13,13 @@ export enum TaskPriority {
   Idle = 4,
 }
 
-const YIELD_INTERVAL_MS = 45
 const FRAME_BUDGET_MS = 16.67
+const FRAME_SAFETY_MARGIN_MS = 4
+const USABLE_FRAME_MS = FRAME_BUDGET_MS - FRAME_SAFETY_MARGIN_MS
 
 const taskQueue: Task[] = []
 let isRunning = false
-let lastYieldTime = 0
+let frameStartTime = 0
 
 function compareTasks(a: Task, b: Task): number {
   if (a.priority !== b.priority) return a.priority - b.priority
@@ -33,11 +34,23 @@ function enqueueTask(task: Task): void {
   taskQueue.sort(compareTasks)
 }
 
-export function shouldYield(): boolean {
-  return performance.now() - lastYieldTime > YIELD_INTERVAL_MS
+function markFrameStart(): void {
+  frameStartTime = performance.now()
 }
 
-async function yieldToMain(): Promise<void> {
+function getElapsedMs(): number {
+  return performance.now() - frameStartTime
+}
+
+export function shouldYield(): boolean {
+  return getElapsedMs() >= USABLE_FRAME_MS
+}
+
+export function getRemainingFrameBudget(): number {
+  return Math.max(0, USABLE_FRAME_MS - getElapsedMs())
+}
+
+export async function yieldToMain(): Promise<void> {
   return new Promise(resolve => {
     if ('scheduler' in globalThis && typeof (globalThis as any).scheduler.postTask === 'function') {
       ;(globalThis as any).scheduler.postTask(resolve, { priority: 'background' })
@@ -52,16 +65,20 @@ async function flushQueue(): Promise<void> {
   isRunning = true
 
   while (taskQueue.length > 0) {
-    const task = taskQueue.shift()
-    if (!task) break
+    markFrameStart()
 
-    lastYieldTime = performance.now()
+    while (taskQueue.length > 0 && !shouldYield()) {
+      const task = taskQueue.shift()
+      if (!task) break
 
-    try {
-      await task.execute()
-    } catch { /* task failed silently */ }
+      try {
+        await task.execute()
+      } catch { /* task failed silently */ }
 
-    if (taskQueue.length > 0 && shouldYield()) {
+      if (shouldYield()) break
+    }
+
+    if (taskQueue.length > 0) {
       await yieldToMain()
     }
   }
@@ -96,7 +113,7 @@ export function getQueueLength(): number {
 }
 
 export function getFrameBudget(): number {
-  return Math.max(0, FRAME_BUDGET_MS - (performance.now() % FRAME_BUDGET_MS))
+  return getRemainingFrameBudget()
 }
 
 export function splitGenerator<T>(gen: Generator<T>, onChunk?: (results: T[]) => void): string {
@@ -112,6 +129,7 @@ export function splitGenerator<T>(gen: Generator<T>, onChunk?: (results: T[]) =>
         if (shouldYield()) {
           if (onChunk) onChunk(results.splice(0))
           await yieldToMain()
+          markFrameStart()
         }
 
         result = gen.next()

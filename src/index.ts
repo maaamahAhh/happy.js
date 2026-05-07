@@ -14,6 +14,7 @@ export type { LayoutRisk, LayoutRiskPattern } from './analyzer/layout-detector.j
 export type { HotPath } from './analyzer/hot-path-finder.js'
 export type { ReactComponentAnalysis } from './analyzer/react-inspector.js'
 export type { Task, TaskPriority } from './scheduler.js'
+export type { HappyBridgeAPI } from './runtime/bridge.js'
 export type { VirtualList, VirtualListOptions } from './renderer/dom.js'
 export { createVirtualList } from './renderer/dom.js'
 export { createHybridRenderer, type HybridRenderer, type HybridRendererOptions } from './renderer/hybrid.js'
@@ -49,7 +50,7 @@ function createHappy(config: HappyConfig = {}): HappyAPI {
     patch: runtime.patch,
     unpatch: runtime.unpatch,
     scheduler,
-    version: '0.3.0',
+    version: '0.4.0',
   }
 }
 

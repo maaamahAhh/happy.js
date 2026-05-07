@@ -2,10 +2,12 @@ import { patchDOMWrites, flushDOMWrites, unpatchDOMWrites } from './dom-patch.js
 import { patchReadCache, invalidateReadCache, unpatchReadCache } from './read-cache.js'
 import { patchLayoutGuard, unpatchLayoutGuard } from './layout-guard.js'
 import { patchEventSystem, enableDelegation, unpatchEventSystem } from './event-delegation.js'
+import { installBridge, uninstallBridge, getBridge, type HappyBridgeAPI } from './bridge.js'
 
 export { flushDOMWrites } from './dom-patch.js'
 export { invalidateReadCache } from './read-cache.js'
 export { enableDelegation } from './event-delegation.js'
+export { getBridge, type HappyBridgeAPI } from './bridge.js'
 
 export interface RuntimeConfig {
   domWriteCoalescing?: boolean
@@ -31,6 +33,8 @@ export function patch(config: RuntimeConfig = {}): void {
 
   activeConfig = { ...DEFAULT_RUNTIME_CONFIG, ...config }
 
+  installBridge()
+
   if (activeConfig.domWriteCoalescing) patchDOMWrites()
   if (activeConfig.readCaching) patchReadCache()
   if (activeConfig.layoutGuard) patchLayoutGuard()
@@ -46,6 +50,7 @@ export function unpatch(): void {
   unpatchReadCache()
   unpatchLayoutGuard()
   unpatchEventSystem()
+  uninstallBridge()
 
   isPatched = false
 }
@@ -56,6 +61,7 @@ export const runtime = {
   flushDOMWrites,
   invalidateReadCache,
   enableDelegation,
+  getBridge,
 }
 
 patch()
