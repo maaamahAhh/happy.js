@@ -7,6 +7,12 @@ let cache = new Map<string, CacheEntry>()
 let currentFrame = 0
 let isInvalidating = false
 let idCounter = 0
+let isPatched = false
+
+const originalGetters = new Map<string, (this: any) => any>()
+let originalGetBoundingClientRect: ((this: Element) => DOMRect) | null = null
+
+const elementIds = new WeakMap<Element, string>()
 
 function getFrame(): number {
   return currentFrame
@@ -24,10 +30,6 @@ function advanceFrame(): void {
   }
 }
 
-advanceFrame()
-
-const elementIds = new WeakMap<Element, string>()
-
 function makeCacheKey(element: Element, property: string): string {
   let id = elementIds.get(element)
   if (!id) {
@@ -42,6 +44,7 @@ function patchLayoutPropertyGetter(prototype: any, prop: string): void {
   if (!descriptor || !descriptor.get) return
 
   const originalGet = descriptor.get
+  originalGetters.set(prop, originalGet)
 
   descriptor.get = function (this: any) {
     const key = makeCacheKey(this, prop)
@@ -57,8 +60,20 @@ function patchLayoutPropertyGetter(prototype: any, prop: string): void {
   Object.defineProperty(prototype, prop, descriptor)
 }
 
+function unpatchLayoutPropertyGetter(prototype: any, prop: string): void {
+  const originalGet = originalGetters.get(prop)
+  if (!originalGet) return
+
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, prop)
+  if (!descriptor) return
+
+  descriptor.get = originalGet
+  Object.defineProperty(prototype, prop, descriptor)
+  originalGetters.delete(prop)
+}
+
 function patchGetBoundingClientRect(): void {
-  const original = Element.prototype.getBoundingClientRect
+  originalGetBoundingClientRect = Element.prototype.getBoundingClientRect
 
   Element.prototype.getBoundingClientRect = function (this: Element) {
     const key = makeCacheKey(this, 'getBoundingClientRect')
@@ -66,22 +81,32 @@ function patchGetBoundingClientRect(): void {
 
     if (entry && entry.frame === getFrame()) return entry.value as DOMRect
 
-    const value = original.call(this)
+    const value = originalGetBoundingClientRect!.call(this)
     cache.set(key, { value, frame: getFrame() })
     return value
   }
 }
 
+function unpatchGetBoundingClientRect(): void {
+  if (originalGetBoundingClientRect) {
+    Element.prototype.getBoundingClientRect = originalGetBoundingClientRect
+    originalGetBoundingClientRect = null
+  }
+}
+
+const LAYOUT_PROPS = [
+  'offsetWidth', 'offsetHeight', 'offsetTop', 'offsetLeft',
+  'clientWidth', 'clientHeight', 'clientTop', 'clientLeft',
+  'scrollWidth', 'scrollHeight', 'scrollTop', 'scrollLeft',
+]
+
 export function patchReadCache(): void {
-  const layoutProps = [
-    'offsetWidth', 'offsetHeight', 'offsetTop', 'offsetLeft',
-    'clientWidth', 'clientHeight', 'clientTop', 'clientLeft',
-    'scrollWidth', 'scrollHeight', 'scrollTop', 'scrollLeft',
-  ]
+  if (isPatched) return
+  isPatched = true
 
-  layoutProps.forEach(prop => patchLayoutPropertyGetter(HTMLElement.prototype, prop))
-
+  LAYOUT_PROPS.forEach(prop => patchLayoutPropertyGetter(HTMLElement.prototype, prop))
   patchGetBoundingClientRect()
+  advanceFrame()
 }
 
 export function invalidateReadCache(): void {
@@ -89,5 +114,10 @@ export function invalidateReadCache(): void {
 }
 
 export function unpatchReadCache(): void {
+  if (!isPatched) return
+  isPatched = false
+
+  LAYOUT_PROPS.forEach(prop => unpatchLayoutPropertyGetter(HTMLElement.prototype, prop))
+  unpatchGetBoundingClientRect()
   cache = new Map()
 }

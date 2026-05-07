@@ -1,6 +1,6 @@
 {
   "name": "@maaamahahh/happy.js",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Stabilizes object shapes, separates DOM layout reads from writes, auto-memos React components, batches DOM mutations, splits long tasks, and renders dense lists via WebGL with SDF text.",
   "repository": {
     "type": "git",

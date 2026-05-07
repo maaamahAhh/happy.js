@@ -63,5 +63,3 @@ export const runtime = {
   enableDelegation,
   getBridge,
 }
-
-patch()

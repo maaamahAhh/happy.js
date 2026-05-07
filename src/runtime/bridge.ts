@@ -8,18 +8,24 @@ export interface HappyBridgeAPI {
   getFrameBudget: () => number
 }
 
+const USABLE_FRAME_MS = 12.67
+
+let lastYieldTime = 0
 let originalDescriptor: PropertyDescriptor | undefined
 
 function createBridgeAPI(): HappyBridgeAPI {
   return {
-    shouldYield: () => performance.now() % 16.67 >= 12.67,
-    yield: schedulerYieldToMain,
+    shouldYield: () => performance.now() - lastYieldTime >= USABLE_FRAME_MS,
+    yield: async () => {
+      await schedulerYieldToMain()
+      lastYieldTime = performance.now()
+    },
     batchWrite: (fn: () => void) => {
       requestAnimationFrame(() => {
         try { fn() } catch { /* skip failed write */ }
       })
     },
-    getFrameBudget: () => Math.max(0, 12.67 - (performance.now() % 16.67)),
+    getFrameBudget: () => Math.max(0, USABLE_FRAME_MS - (performance.now() - lastYieldTime)),
   }
 }
 
@@ -30,6 +36,7 @@ export function installBridge(): void {
   if (existing) return
 
   originalDescriptor = Object.getOwnPropertyDescriptor(window, BRIDGE_IDENTIFIER)
+  lastYieldTime = performance.now()
 
   const api = createBridgeAPI()
   Object.defineProperty(window, BRIDGE_IDENTIFIER, {

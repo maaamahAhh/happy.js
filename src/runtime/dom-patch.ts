@@ -4,6 +4,7 @@ interface WriteQueue {
 }
 
 let queue: WriteQueue | null = null
+const originalSetters = new Map<string, (this: any, value: unknown) => void>()
 
 function getQueue(): WriteQueue {
   if (!queue) {
@@ -31,6 +32,7 @@ function patchPropertySetter(prototype: any, prop: string): void {
   if (!descriptor || !descriptor.set) return
 
   const originalSet = descriptor.set
+  originalSetters.set(prop, originalSet)
 
   descriptor.set = function (this: any, value: unknown) {
     getQueue().writes.push(() => {
@@ -40,6 +42,18 @@ function patchPropertySetter(prototype: any, prop: string): void {
   }
 
   Object.defineProperty(prototype, prop, descriptor)
+}
+
+function unpatchPropertySetter(prototype: any, prop: string): void {
+  const originalSet = originalSetters.get(prop)
+  if (!originalSet) return
+
+  const descriptor = Object.getOwnPropertyDescriptor(prototype, prop)
+  if (!descriptor) return
+
+  descriptor.set = originalSet
+  Object.defineProperty(prototype, prop, descriptor)
+  originalSetters.delete(prop)
 }
 
 export function patchDOMWrites(): void {
@@ -58,5 +72,7 @@ export function flushDOMWrites(): void {
 }
 
 export function unpatchDOMWrites(): void {
+  unpatchPropertySetter(Element.prototype, 'innerHTML')
+  unpatchPropertySetter(Element.prototype, 'textContent')
   queue = null
 }

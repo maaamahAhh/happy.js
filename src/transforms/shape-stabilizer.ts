@@ -6,17 +6,26 @@ import type { VisitorFn, VisitorMap } from './types.js'
 const SLOT_NAMES = ['_slot1', '_slot2', '_slot3']
 
 function sortObjectProperties(path: NodePath<t.ObjectExpression>): void {
-  const props = path.node.properties.filter((p): p is t.ObjectProperty => t.isObjectProperty(p))
-  if (props.length < 2) return
+  const objectProps: Array<{ index: number; prop: t.ObjectProperty }> = []
+  for (let i = 0; i < path.node.properties.length; i++) {
+    const p = path.node.properties[i]
+    if (t.isObjectProperty(p)) objectProps.push({ index: i, prop: p })
+  }
+  if (objectProps.length < 2) return
 
-  const others = path.node.properties.filter(p => !t.isObjectProperty(p))
-  props.sort((a, b) => {
-    const keyA = t.isIdentifier(a.key) ? a.key.name : t.isStringLiteral(a.key) ? a.key.value : ''
-    const keyB = t.isIdentifier(b.key) ? b.key.name : t.isStringLiteral(b.key) ? b.key.value : ''
+  objectProps.sort((a, b) => {
+    const keyA = t.isIdentifier(a.prop.key) ? a.prop.key.name : t.isStringLiteral(a.prop.key) ? a.prop.key.value : ''
+    const keyB = t.isIdentifier(b.prop.key) ? b.prop.key.name : t.isStringLiteral(b.prop.key) ? b.prop.key.value : ''
     return keyA.localeCompare(keyB)
   })
 
-  path.node.properties = [...others, ...props]
+  const sortedProps = objectProps.map(e => e.prop)
+  let sortIndex = 0
+  for (let i = 0; i < path.node.properties.length; i++) {
+    if (t.isObjectProperty(path.node.properties[i])) {
+      path.node.properties[i] = sortedProps[sortIndex++]
+    }
+  }
 }
 
 function replaceDeleteWithUndefined(path: NodePath<t.UnaryExpression>): void {

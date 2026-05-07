@@ -21,18 +21,21 @@ export interface HybridRenderer {
 }
 
 const DEFAULT_WEBGL_THRESHOLD = 500
+const DEFAULT_OVERSCAN = 5
 
 export function createHybridRenderer(options: HybridRendererOptions): HybridRenderer {
   const { container, itemCount, itemHeight, renderItem } = options
   const font = options.font ?? '16px sans-serif'
   const webglThreshold = options.webglThreshold ?? DEFAULT_WEBGL_THRESHOLD
-  const overscan = options.overscan ?? 5
+  const overscan = options.overscan ?? DEFAULT_OVERSCAN
 
   let currentItemCount = itemCount
   let webglRenderer: WebGLRenderer | null = null
   let accessibilityLayer: AccessibilityLayer | null = null
   let canvas: HTMLCanvasElement | null = null
   let domList: VirtualList | null = null
+  let scrollTop = 0
+  let resizeObserver: ResizeObserver | null = null
   const useWebGL = itemCount >= webglThreshold && !!options.renderWebGLItem
 
   if (useWebGL) {
@@ -61,8 +64,26 @@ export function createHybridRenderer(options: HybridRendererOptions): HybridRend
     }
 
     accessibilityLayer = new AccessibilityLayer(container)
+    setupResizeObserver()
     renderWebGL()
     return true
+  }
+
+  function setupResizeObserver(): void {
+    if (!container || !webglRenderer) return
+
+    resizeObserver = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect
+        if (canvas && width > 0 && height > 0) {
+          canvas.width = width
+          canvas.height = height
+          webglRenderer?.resize(width, height)
+          renderWebGL()
+        }
+      }
+    })
+    resizeObserver.observe(container)
   }
 
   function collectAccessibleItems(items: RenderItem[]): AccessibleTextItem[] {
@@ -74,8 +95,12 @@ export function createHybridRenderer(options: HybridRendererOptions): HybridRend
   function renderWebGL(): void {
     if (!webglRenderer || !options.renderWebGLItem) return
 
+    const containerHeight = container.clientHeight
+    const start = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan)
+    const end = Math.min(currentItemCount - 1, Math.ceil((scrollTop + containerHeight) / itemHeight) + overscan)
+
     const items: RenderItem[] = []
-    for (let i = 0; i < currentItemCount; i++) {
+    for (let i = start; i <= end; i++) {
       items.push(...options.renderWebGLItem(i))
     }
 
@@ -92,14 +117,29 @@ export function createHybridRenderer(options: HybridRendererOptions): HybridRend
 
   function scrollTo(index: number): void {
     if (domList) domList.scrollTo(index)
-    else if (canvas) container.scrollTop = index * itemHeight
+    else {
+      container.scrollTop = index * itemHeight
+      scrollTop = container.scrollTop
+      renderWebGL()
+    }
   }
 
   function destroy(): void {
+    if (resizeObserver) {
+      resizeObserver.disconnect()
+      resizeObserver = null
+    }
     if (domList) domList.destroy()
     if (webglRenderer) webglRenderer.destroy()
     if (accessibilityLayer) accessibilityLayer.destroy()
     if (canvas?.parentNode) canvas.parentNode.removeChild(canvas)
+  }
+
+  if (useWebGL && webglRenderer) {
+    container.addEventListener('scroll', () => {
+      scrollTop = container.scrollTop
+      renderWebGL()
+    }, { passive: true })
   }
 
   return {

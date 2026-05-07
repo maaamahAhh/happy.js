@@ -50,7 +50,7 @@ function createHappy(config: HappyConfig = {}): HappyAPI {
     patch: runtime.patch,
     unpatch: runtime.unpatch,
     scheduler,
-    version: '0.4.0',
+    version: '0.5.0',
   }
 }
 

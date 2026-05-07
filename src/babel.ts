@@ -9,8 +9,6 @@ export interface BabelPluginOptions {
   debug?: boolean
 }
 
-const DEFAULT_STRATEGIES: TransformStrategies = getStrategyOptions('balanced')
-
 export default function happyBabelPlugin(_context: PluginPass, options: BabelPluginOptions = {}): PluginObj {
   const baseStrategies = getStrategyOptions(options.aggression ?? 'balanced')
   const strategies: TransformStrategies = {

@@ -13,6 +13,7 @@ export interface VirtualList {
 }
 
 const DEFAULT_OVERSCAN = 5
+const MAX_POOL_SIZE = 200
 
 export function createVirtualList(options: VirtualListOptions): VirtualList {
   const { container, itemHeight, renderItem } = options
@@ -22,6 +23,8 @@ export function createVirtualList(options: VirtualListOptions): VirtualList {
   let pool: Map<number, HTMLElement> = new Map()
   let activeIndices = new Set<number>()
   let isDestroyed = false
+  let rafId = 0
+  let isScrollScheduled = false
 
   container.style.position = 'relative'
   container.style.overflow = 'auto'
@@ -37,6 +40,21 @@ export function createVirtualList(options: VirtualListOptions): VirtualList {
     const start = Math.max(0, Math.floor(scrollTop / itemHeight) - overscan)
     const end = Math.min(itemCount - 1, Math.ceil((scrollTop + containerHeight) / itemHeight) + overscan)
     return { start, end }
+  }
+
+  function evictPool(active: Set<number>): void {
+    if (pool.size <= MAX_POOL_SIZE) return
+
+    const entries = Array.from(pool.entries())
+      .filter(([idx]) => !active.has(idx))
+      .sort((a, b) => b[0] - a[0])
+
+    const evictCount = pool.size - MAX_POOL_SIZE
+    for (let i = 0; i < evictCount && i < entries.length; i++) {
+      const [idx, el] = entries[i]
+      if (el.parentNode) el.parentNode.removeChild(el)
+      pool.delete(idx)
+    }
   }
 
   function update(newItemCount?: number): void {
@@ -73,6 +91,7 @@ export function createVirtualList(options: VirtualListOptions): VirtualList {
       if (el?.parentNode) el.parentNode.removeChild(el)
     }
 
+    evictPool(newActive)
     activeIndices = newActive
   }
 
@@ -84,6 +103,7 @@ export function createVirtualList(options: VirtualListOptions): VirtualList {
 
   function destroy(): void {
     isDestroyed = true
+    if (rafId) cancelAnimationFrame(rafId)
     for (const [, el] of pool) {
       if (el.parentNode) el.parentNode.removeChild(el)
     }
@@ -94,7 +114,13 @@ export function createVirtualList(options: VirtualListOptions): VirtualList {
 
   const onScroll = () => {
     scrollTop = container.scrollTop
-    update()
+    if (!isScrollScheduled) {
+      isScrollScheduled = true
+      rafId = requestAnimationFrame(() => {
+        isScrollScheduled = false
+        update()
+      })
+    }
   }
   container.addEventListener('scroll', onScroll, { passive: true })
 

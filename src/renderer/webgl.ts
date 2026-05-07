@@ -23,42 +23,48 @@ export interface RenderText {
 
 export type RenderItem = RenderRect | RenderText
 
-const RECT_VS = `
+const BATCHED_RECT_VS = `
 attribute vec2 a_position;
+attribute vec4 a_color;
 uniform vec2 u_resolution;
+varying vec4 v_color;
 void main() {
   vec2 clip = (a_position / u_resolution) * 2.0 - 1.0;
   gl_Position = vec4(clip * vec2(1, -1), 0, 1);
+  v_color = a_color;
 }`
 
-const RECT_FS = `
+const BATCHED_RECT_FS = `
 precision mediump float;
-uniform vec4 u_color;
+varying vec4 v_color;
 void main() {
-  gl_FragColor = u_color;
+  gl_FragColor = v_color;
 }`
 
 const SDF_VS = `
 attribute vec2 a_position;
 attribute vec2 a_texCoord;
+attribute vec4 a_color;
 uniform vec2 u_resolution;
 varying vec2 v_texCoord;
+varying vec4 v_color;
 void main() {
   vec2 clip = (a_position / u_resolution) * 2.0 - 1.0;
   gl_Position = vec4(clip * vec2(1, -1), 0, 1);
   v_texCoord = a_texCoord;
+  v_color = a_color;
 }`
 
 const SDF_FS = `
 precision mediump float;
 varying vec2 v_texCoord;
+varying vec4 v_color;
 uniform sampler2D u_atlas;
-uniform vec4 u_color;
 uniform float u_smoothing;
 void main() {
   float dist = texture2D(u_atlas, v_texCoord).a;
   float alpha = smoothstep(0.5 - u_smoothing, 0.5 + u_smoothing, dist);
-  gl_FragColor = vec4(u_color.rgb, u_color.a * alpha);
+  gl_FragColor = vec4(v_color.rgb, v_color.a * alpha);
 }`
 
 function compileShader(gl: WebGLRenderingContext, source: string, type: number): WebGLShader | null {
@@ -90,6 +96,21 @@ function createProgram(gl: WebGLRenderingContext, vsSource: string, fsSource: st
   return program
 }
 
+interface RectLocations {
+  position: number
+  color: number
+  resolution: WebGLUniformLocation | null
+}
+
+interface SdfLocations {
+  position: number
+  texCoord: number
+  color: number
+  resolution: WebGLUniformLocation | null
+  atlas: WebGLUniformLocation | null
+  smoothing: WebGLUniformLocation | null
+}
+
 export class WebGLRenderer {
   private gl: WebGLRenderingContext
   private atlas: SdfAtlas
@@ -100,6 +121,9 @@ export class WebGLRenderer {
   private rectBuffer: WebGLBuffer | null = null
   private sdfPosBuffer: WebGLBuffer | null = null
   private sdfUvBuffer: WebGLBuffer | null = null
+  private sdfColorBuffer: WebGLBuffer | null = null
+  private rectLocations: RectLocations | null = null
+  private sdfLocations: SdfLocations | null = null
   private hitBoxes: Array<{ x: number; y: number; width: number; height: number; item: RenderItem }> = []
   private canvasWidth = 0
   private canvasHeight = 0
@@ -119,12 +143,32 @@ export class WebGLRenderer {
   private initGL(): void {
     const gl = this.gl
 
-    this.rectProgram = createProgram(gl, RECT_VS, RECT_FS)
+    this.rectProgram = createProgram(gl, BATCHED_RECT_VS, BATCHED_RECT_FS)
     this.sdfProgram = createProgram(gl, SDF_VS, SDF_FS)
+
+    if (this.rectProgram) {
+      this.rectLocations = {
+        position: gl.getAttribLocation(this.rectProgram, 'a_position'),
+        color: gl.getAttribLocation(this.rectProgram, 'a_color'),
+        resolution: gl.getUniformLocation(this.rectProgram, 'u_resolution'),
+      }
+    }
+
+    if (this.sdfProgram) {
+      this.sdfLocations = {
+        position: gl.getAttribLocation(this.sdfProgram, 'a_position'),
+        texCoord: gl.getAttribLocation(this.sdfProgram, 'a_texCoord'),
+        color: gl.getAttribLocation(this.sdfProgram, 'a_color'),
+        resolution: gl.getUniformLocation(this.sdfProgram, 'u_resolution'),
+        atlas: gl.getUniformLocation(this.sdfProgram, 'u_atlas'),
+        smoothing: gl.getUniformLocation(this.sdfProgram, 'u_smoothing'),
+      }
+    }
 
     this.rectBuffer = gl.createBuffer()
     this.sdfPosBuffer = gl.createBuffer()
     this.sdfUvBuffer = gl.createBuffer()
+    this.sdfColorBuffer = gl.createBuffer()
 
     this.atlasTexture = gl.createTexture()
     gl.bindTexture(gl.TEXTURE_2D, this.atlasTexture)
@@ -162,87 +206,85 @@ export class WebGLRenderer {
   }
 
   private renderRects(rects: RenderRect[]): void {
-    if (rects.length === 0 || !this.rectProgram || !this.rectBuffer) return
+    if (rects.length === 0 || !this.rectProgram || !this.rectBuffer || !this.rectLocations) return
     const gl = this.gl
 
-    const vertices: number[] = []
-    const colors: number[] = []
-
-    for (const r of rects) {
-      const { x, y, width: w, height: h, color } = r
-      vertices.push(x, y, x + w, y, x, y + h, x, y + h, x + w, y, x + w, y + h)
-      for (let i = 0; i < 6; i++) colors.push(...color)
-    }
-
-    gl.useProgram(this.rectProgram)
-    const resolutionLoc = gl.getUniformLocation(this.rectProgram, 'u_resolution')
-    gl.uniform2f(resolutionLoc, this.canvasWidth, this.canvasHeight)
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.rectBuffer)
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.DYNAMIC_DRAW)
-
-    const posLoc = gl.getAttribLocation(this.rectProgram, 'a_position')
-    gl.enableVertexAttribArray(posLoc)
-    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0)
-
-    const colorLoc = gl.getUniformLocation(this.rectProgram, 'u_color')
+    const vertexData = new Float32Array(rects.length * 6 * 6)
 
     let offset = 0
     for (const r of rects) {
-      gl.uniform4f(colorLoc, r.color[0], r.color[1], r.color[2], r.color[3])
-      gl.drawArrays(gl.TRIANGLES, offset, 6)
-      offset += 6
+      const { x, y, width: w, height: h, color } = r
+      const vertices = [x, y, x + w, y, x, y + h, x, y + h, x + w, y, x + w, y + h]
+      for (let i = 0; i < 6; i++) {
+        vertexData[offset++] = vertices[i * 2]
+        vertexData[offset++] = vertices[i * 2 + 1]
+        vertexData[offset++] = color[0]
+        vertexData[offset++] = color[1]
+        vertexData[offset++] = color[2]
+        vertexData[offset++] = color[3]
+      }
     }
+
+    gl.useProgram(this.rectProgram)
+    gl.uniform2f(this.rectLocations.resolution, this.canvasWidth, this.canvasHeight)
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.rectBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.DYNAMIC_DRAW)
+
+    const STRIDE = 6 * 4
+    gl.enableVertexAttribArray(this.rectLocations.position)
+    gl.vertexAttribPointer(this.rectLocations.position, 2, gl.FLOAT, false, STRIDE, 0)
+    gl.enableVertexAttribArray(this.rectLocations.color)
+    gl.vertexAttribPointer(this.rectLocations.color, 4, gl.FLOAT, false, STRIDE, 2 * 4)
+
+    gl.drawArrays(gl.TRIANGLES, 0, rects.length * 6)
   }
 
   private renderTexts(texts: RenderText[]): void {
-    if (texts.length === 0 || !this.sdfProgram || !this.sdfPosBuffer || !this.sdfUvBuffer || !this.atlasTexture) return
+    if (texts.length === 0 || !this.sdfProgram || !this.sdfPosBuffer || !this.sdfUvBuffer || !this.sdfColorBuffer || !this.atlasTexture || !this.sdfLocations) return
     const gl = this.gl
 
     const positions: number[] = []
     const uvs: number[] = []
+    const colors: number[] = []
 
     for (const t of texts) {
-      this.appendGlyphQuads(t, positions, uvs)
+      this.appendGlyphQuads(t, positions, uvs, colors)
     }
 
     if (positions.length === 0) return
 
     gl.useProgram(this.sdfProgram)
-
-    const resolutionLoc = gl.getUniformLocation(this.sdfProgram, 'u_resolution')
-    gl.uniform2f(resolutionLoc, this.canvasWidth, this.canvasHeight)
+    gl.uniform2f(this.sdfLocations.resolution, this.canvasWidth, this.canvasHeight)
 
     gl.activeTexture(gl.TEXTURE0)
     gl.bindTexture(gl.TEXTURE_2D, this.atlasTexture)
-    const atlasLoc = gl.getUniformLocation(this.sdfProgram, 'u_atlas')
-    gl.uniform1i(atlasLoc, 0)
-
-    const smoothingLoc = gl.getUniformLocation(this.sdfProgram, 'u_smoothing')
-    gl.uniform1f(smoothingLoc, 0.25)
-
-    const colorLoc = gl.getUniformLocation(this.sdfProgram, 'u_color')
-    gl.uniform4f(colorLoc, 0, 0, 0, 1)
+    gl.uniform1i(this.sdfLocations.atlas, 0)
+    gl.uniform1f(this.sdfLocations.smoothing, 0.25)
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.sdfPosBuffer)
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.DYNAMIC_DRAW)
-    const posLoc = gl.getAttribLocation(this.sdfProgram, 'a_position')
-    gl.enableVertexAttribArray(posLoc)
-    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0)
+    gl.enableVertexAttribArray(this.sdfLocations.position)
+    gl.vertexAttribPointer(this.sdfLocations.position, 2, gl.FLOAT, false, 0, 0)
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.sdfUvBuffer)
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(uvs), gl.DYNAMIC_DRAW)
-    const uvLoc = gl.getAttribLocation(this.sdfProgram, 'a_texCoord')
-    gl.enableVertexAttribArray(uvLoc)
-    gl.vertexAttribPointer(uvLoc, 2, gl.FLOAT, false, 0, 0)
+    gl.enableVertexAttribArray(this.sdfLocations.texCoord)
+    gl.vertexAttribPointer(this.sdfLocations.texCoord, 2, gl.FLOAT, false, 0, 0)
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.sdfColorBuffer)
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(colors), gl.DYNAMIC_DRAW)
+    gl.enableVertexAttribArray(this.sdfLocations.color)
+    gl.vertexAttribPointer(this.sdfLocations.color, 4, gl.FLOAT, false, 0, 0)
 
     gl.drawArrays(gl.TRIANGLES, 0, positions.length / 2)
   }
 
-  private appendGlyphQuads(item: RenderText, positions: number[], uvs: number[]): void {
+  private appendGlyphQuads(item: RenderText, positions: number[], uvs: number[], colors: number[]): void {
     const prepared = prepareWithSegments(item.content, this.font)
     const lineHeight = item.fontSize ?? 16
     const { lines } = layoutWithLines(prepared, item.width, lineHeight)
+    const color = item.color ?? [0, 0, 0, 1]
 
     let lineY = item.y
     for (const line of lines) {
@@ -261,6 +303,7 @@ export class WebGLRenderer {
 
         positions.push(gx, gy, gx + gw, gy, gx, gy + gh, gx, gy + gh, gx + gw, gy, gx + gw, gy + gh)
         uvs.push(glyph.u0, glyph.v0, glyph.u1, glyph.v0, glyph.u0, glyph.v1, glyph.u0, glyph.v1, glyph.u1, glyph.v0, glyph.u1, glyph.v1)
+        for (let i = 0; i < 6; i++) colors.push(...color)
 
         charX += glyph.advance
       }
@@ -295,6 +338,7 @@ export class WebGLRenderer {
     if (this.rectBuffer) gl.deleteBuffer(this.rectBuffer)
     if (this.sdfPosBuffer) gl.deleteBuffer(this.sdfPosBuffer)
     if (this.sdfUvBuffer) gl.deleteBuffer(this.sdfUvBuffer)
+    if (this.sdfColorBuffer) gl.deleteBuffer(this.sdfColorBuffer)
     if (this.atlasTexture) gl.deleteTexture(this.atlasTexture)
   }
 }

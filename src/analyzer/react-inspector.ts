@@ -1,4 +1,5 @@
 import { parseToAst, isReactComponentName, EXPENSIVE_ARRAY_METHODS } from './shared.js'
+import { isWrappedWithMemo } from '../transforms/react-optimizer.js'
 import traverse from '@babel/traverse'
 import type { NodePath } from '@babel/traverse'
 import * as t from '@babel/types'
@@ -17,26 +18,10 @@ export interface ReactComponentAnalysis {
 
 const SET_STATE_THRESHOLD = 2
 
-function isWrappedWithMemo(path: NodePath): boolean {
-  const parent = path.parentPath
-  if (!parent) return false
-
-  if (parent.isCallExpression()) {
-    const callee = parent.node.callee
-    if (t.isMemberExpression(callee) && t.isIdentifier(callee.object, { name: 'React' }) && t.isIdentifier(callee.property, { name: 'memo' })) return true
-    if (t.isIdentifier(callee) && callee.name === 'memo') return true
-  }
-
-  if (parent.isVariableDeclarator()) {
-    const init = parent.node.init
-    if (t.isCallExpression(init)) {
-      const callee = init.callee
-      if (t.isMemberExpression(callee) && t.isIdentifier(callee.object, { name: 'React' }) && t.isIdentifier(callee.property, { name: 'memo' })) return true
-    }
-  }
-
-  return false
-}
+const SET_STATE_EXCLUSIONS = new Set([
+  'setTimeout', 'setInterval', 'setImmediate', 'clearTimeout',
+  'setPrototypeOf', 'setAttribute', 'setAttributeNS', 'setProperty',
+])
 
 function traverseNodeTree(node: t.Node, visitor: (node: t.Node) => void): void {
   const queue: t.Node[] = [node]
@@ -88,7 +73,7 @@ function countSetStateCalls(body: t.BlockStatement): number {
     traverseNodeTree(stmt, (node) => {
       if (t.isCallExpression(node) && t.isIdentifier(node.callee)) {
         const name = node.callee.name
-        if (name.startsWith('set') && name.length > 3) count++
+        if (name.startsWith('set') && name.length > 3 && !SET_STATE_EXCLUSIONS.has(name)) count++
       }
     })
   }

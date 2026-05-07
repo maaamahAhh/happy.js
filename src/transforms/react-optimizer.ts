@@ -4,7 +4,14 @@ import type { TransformStrategies } from '../config.js'
 import type { VisitorFn, VisitorMap } from './types.js'
 import { isReactComponentName, EXPENSIVE_ARRAY_METHODS } from '../analyzer/shared.js'
 
-function isAlreadyMemoed(path: NodePath): boolean {
+const SET_STATE_EXCLUSIONS = new Set([
+  'setTimeout', 'setInterval', 'setImmediate', 'clearTimeout',
+  'setPrototypeOf', 'setPrototypeOf', 'setFloat64', 'setFloat32',
+  'setUint8', 'setUint16', 'setUint32', 'setInt8', 'setInt16', 'setInt32',
+  'setAttribute', 'setAttributeNS', 'setProperty',
+])
+
+export function isWrappedWithMemo(path: NodePath): boolean {
   const parent = path.parentPath
   if (!parent) return false
 
@@ -31,12 +38,35 @@ function wrapWithMemo(path: NodePath<t.FunctionDeclaration>): void {
   if (!funcName || !isReactComponentName(funcName)) return
   if (!t.isBlockStatement(path.node.body)) return
   if (!path.node.body.body.some(stmt => t.isReturnStatement(stmt))) return
-  if (isAlreadyMemoed(path)) return
+  if (isWrappedWithMemo(path)) return
 
   const funcExpr = t.functionExpression(path.node.id, path.node.params, path.node.body, path.node.generator, path.node.async)
   const memoCall = t.callExpression(t.memberExpression(t.identifier('React'), t.identifier('memo')), [funcExpr])
 
   path.replaceWith(t.variableDeclaration('const', [t.variableDeclarator(t.identifier(funcName), memoCall)]))
+}
+
+function collectExternalReferences(path: NodePath<t.ArrowFunctionExpression | t.FunctionExpression>): t.Identifier[] {
+  const bindingNames = new Set(Object.keys(path.scope.bindings))
+  const refs: t.Identifier[] = []
+  const seen = new Set<string>()
+
+  path.traverse({
+    Identifier(innerPath: NodePath<t.Identifier>) {
+      const name = innerPath.node.name
+      if (seen.has(name)) return
+      if (bindingNames.has(name)) return
+
+      const binding = innerPath.scope.getBinding(name)
+      if (!binding || binding.kind === 'module') return
+      if (binding.path.isFunctionParent()) return
+
+      seen.add(name)
+      refs.push(t.identifier(name))
+    },
+  })
+
+  return refs
 }
 
 function extractUseCallback(path: NodePath<t.ArrowFunctionExpression | t.FunctionExpression>): void {
@@ -45,8 +75,9 @@ function extractUseCallback(path: NodePath<t.ArrowFunctionExpression | t.Functio
   const funcParent = path.getFunctionParent()
   if (!funcParent) return
 
+  const deps = collectExternalReferences(path)
   const hookName = path.scope.generateUidIdentifier('callback')
-  const useCallbackCall = t.callExpression(t.memberExpression(t.identifier('React'), t.identifier('useCallback')), [path.node, t.arrayExpression([])])
+  const useCallbackCall = t.callExpression(t.memberExpression(t.identifier('React'), t.identifier('useCallback')), [path.node, t.arrayExpression(deps)])
   const hookDeclaration = t.variableDeclaration('const', [t.variableDeclarator(hookName, useCallbackCall)])
 
   const body = funcParent.node.body
@@ -60,10 +91,12 @@ function wrapWithUseMemo(path: NodePath<t.CallExpression>): void {
   if (!EXPENSIVE_ARRAY_METHODS.has(path.node.callee.property.name)) return
   if (!path.getFunctionParent()) return
 
+  const deps = t.isIdentifier(path.node.callee.object) ? [path.node.callee.object] : []
+
   path.replaceWith(
     t.callExpression(t.memberExpression(t.identifier('React'), t.identifier('useMemo')), [
       t.arrowFunctionExpression([], path.node),
-      t.arrayExpression([path.node.callee.object]),
+      t.arrayExpression(deps),
     ]),
   )
 }
@@ -88,6 +121,7 @@ function wrapSetStateWithTransition(path: NodePath<t.CallExpression>): void {
   if (!t.isIdentifier(path.node.callee)) return
   const name = path.node.callee.name
   if (!name.startsWith('set') || name.length <= 3) return
+  if (SET_STATE_EXCLUSIONS.has(name)) return
   if (!isInsideEventHandler(path)) return
 
   path.replaceWith(

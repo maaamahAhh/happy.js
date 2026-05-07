@@ -1,4 +1,4 @@
-import { parseToAst, LAYOUT_READ_PROPERTIES } from './shared.js'
+import { parseToAst } from './shared.js'
 import traverse from '@babel/traverse'
 import type { NodePath } from '@babel/traverse'
 import * as t from '@babel/types'

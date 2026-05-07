@@ -31,6 +31,12 @@ export const DOM_WRITE_METHODS = new Set([
   'setAttribute', 'removeAttribute',
 ])
 
+export const LAYOUT_WRITE_STYLE_PROPERTIES = new Set([
+  'width', 'height', 'top', 'left', 'right', 'bottom',
+  'margin', 'padding', 'display', 'position',
+  'overflow', 'transform', 'opacity',
+])
+
 export const EXPENSIVE_ARRAY_METHODS = new Set(['map', 'filter', 'reduce', 'sort', 'flatMap', 'find', 'some', 'every'])
 
 export function isReactComponentName(name: string): boolean {
@@ -41,4 +47,26 @@ export type LoopNode = t.ForStatement | t.ForInStatement | t.ForOfStatement | t.
 
 export function isLoopNode(node: t.Node): node is LoopNode {
   return t.isForStatement(node) || t.isForInStatement(node) || t.isForOfStatement(node) || t.isWhileStatement(node)
+}
+
+export function isLayoutRead(node: t.Node): boolean {
+  if (t.isMemberExpression(node) && t.isIdentifier(node.property) && LAYOUT_READ_PROPERTIES.has(node.property.name)) return true
+  if (t.isCallExpression(node) && t.isMemberExpression(node.callee) && t.isIdentifier(node.callee.property)) {
+    return LAYOUT_READ_METHODS.has(node.callee.property.name)
+  }
+  return false
+}
+
+export function isLayoutWrite(node: t.Node): boolean {
+  if (t.isAssignmentExpression(node) && t.isMemberExpression(node.left)) {
+    const left = node.left
+    if (t.isIdentifier(left.property) && DOM_WRITE_PROPERTIES.has(left.property.name)) return true
+    if (t.isMemberExpression(left.object) && t.isIdentifier(left.object.property) && left.object.property.name === 'style') {
+      return LAYOUT_WRITE_STYLE_PROPERTIES.has((left.property as t.Identifier).name)
+    }
+  }
+  if (t.isCallExpression(node) && t.isMemberExpression(node.callee) && t.isIdentifier(node.callee.property)) {
+    return DOM_WRITE_METHODS.has(node.callee.property.name)
+  }
+  return false
 }

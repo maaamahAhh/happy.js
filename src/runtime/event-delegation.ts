@@ -10,6 +10,8 @@ const DEBOUNCE_TIMERS = new Map<string, number | undefined>()
 
 const delegatedHandlers = new Map<string, Map<string, EventListener>>()
 
+let originalAddEventListener: ((this: EventTarget, type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) => void) | null = null
+
 function throttle(type: string, listener: EventListener): EventListener {
   return (event: Event) => {
     const key = `${type}-${(event.target as Element)?.tagName}`
@@ -43,7 +45,7 @@ function wrapListener(type: string, listener: EventListener): EventListener {
 }
 
 function patchAddEventListener(): void {
-  const original = EventTarget.prototype.addEventListener
+  originalAddEventListener = EventTarget.prototype.addEventListener.bind(EventTarget.prototype)
 
   EventTarget.prototype.addEventListener = function (
     this: EventTarget,
@@ -51,7 +53,7 @@ function patchAddEventListener(): void {
     listener: EventListenerOrEventListenerObject | null,
     options?: boolean | AddEventListenerOptions,
   ) {
-    if (!listener) return original.call(this, type, listener, options)
+    if (!listener) return originalAddEventListener!.call(this, type, listener, options)
 
     const normalizedOptions = typeof options === 'boolean' ? { capture: options } : { ...options }
 
@@ -63,7 +65,7 @@ function patchAddEventListener(): void {
       ? wrapListener(type, listener)
       : listener
 
-    return original.call(this, type, wrappedListener, normalizedOptions)
+    return originalAddEventListener!.call(this, type, wrappedListener, normalizedOptions)
   }
 }
 
@@ -102,6 +104,10 @@ export function enableDelegation(root?: Element | Document): void {
 }
 
 export function unpatchEventSystem(): void {
+  if (originalAddEventListener) {
+    EventTarget.prototype.addEventListener = originalAddEventListener
+    originalAddEventListener = null
+  }
   delegatedHandlers.clear()
   THROTTLE_TIMERS.clear()
   DEBOUNCE_TIMERS.clear()
